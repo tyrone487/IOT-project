@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jardin Inteligente</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            width: 85%;
+            height: auto;
+            max-width: 1000px;
+            display: grid;
+            grid-template-areas: 
+                "titulo titulo"
+                "grafico clima"
+                "estado lluvia";
+            grid-gap: 20px;
+        }
+
+        .titulo {
+            grid-area: titulo;
+            background-color: #ffffff;
+            padding: 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .grafico {
+            grid-area: grafico;
+            background-color: #ffffff;
+            padding: 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+        }
+        .clima {
+            grid-area: clima;
+            background-color: #ffffff;
+            padding: 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            text-align: center;
+            height: 250px;
+        }
+
+        .estado {
+            grid-area: estado;
+            background-color: #ffffff;
+            padding: 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            text-align: center;
+            height: 100px;
+        }
+
+        .lluvia {
+            grid-area: lluvia;
+            background-color: #ffffff;
+            padding: 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            text-align: center;
+            height: 100px;
+        }
+
+
+
+        .card h1 {
+            font-size: 1.5em;
+            margin-bottom: 15px;
+        }
+
+        .card canvas {
+            width: 70% !important;
+            height: auto !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="titulo card">
+            <h1>Jardin Inteligente IOT</h1>
+        </div>
+        <div class="grafico card">
+            <canvas id="sensorChart"></canvas>
+        </div>
+        <div class="clima card" id="climaCard">
+            <h1>Clima Actual</h1>
+            <p id="climaData">Cargando...</p>
+        </div>
+        <div class="estado card" id="estadoCard">
+            <h1>Estado General de Cuidado</h1>
+            <p id="estadoGeneral">Cargando...</p>
+        </div>
+        <div class="lluvia card" id="lluviaCard">
+            <h1>Estado de la Lluvia</h1>
+            <p id="lluviaStatus">No Lluvia</p>
+        </div>
+    </div>
+
+    <script>
+        const ctx = document.getElementById('sensorChart').getContext('2d');
+        const sensorChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Humedad',
+                    data: [],
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1
+                },
+                {
+                    label: 'Lluvia',
+                    data: [],
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+
+        function fetchSensorData() {
+            fetch('/api/data')
+                .then(response => response.json())
+                .then(data => {
+                    const time = new Date().toLocaleTimeString();
+                    sensorChart.data.labels.push(time);
+                    sensorChart.data.datasets[0].data.push(data.humedad);
+                    sensorChart.data.datasets[1].data.push(data.lluvia);
+                    sensorChart.update();
+                    updateLluviaStatus(data.lluvia);
+                    // Aquí llamamos a la actualización del estado general con los datos obtenidos de la API del clima.
+                    fetchApiData((climaData) => {
+                        updateEstadoGeneral(data.humedad, data.lluvia, climaData.temp, climaData.humedad_ambiental, climaData.presion);
+                    });
+                })
+                .catch(error => {
+                    console.error('Error fetching data:', error);
+                });
+        }
+
+        function updateLluviaStatus(lluvia) {
+            const lluviaStatus = document.getElementById('lluviaStatus');
+            if (lluvia < 20) {
+                lluviaStatus.textContent = 'No Lluvia';
+                lluviaStatus.style.color = 'green';
+            } else if (lluvia >= 20 && lluvia < 50) {
+                lluviaStatus.textContent = 'Lluvia';
+                lluviaStatus.style.color = 'orange';
+            } else {
+                lluviaStatus.textContent = 'Lluvia Intensa';
+                lluviaStatus.style.color = 'red';
+            }
+        }
+
+    function updateEstadoGeneral(humedad, lluvia, temp, humedadAmbiental, presion) {
+    const estadoGeneral = document.getElementById('estadoGeneral');
+
+    // Valores de referencia
+    const refHumedad = 2650;
+    const refLluvia = 0;
+    const refTemp = 20;
+    const refHumedadAmbiental = 80;
+    const refPresion = 1013;
+
+    // Rango de tolerancia del 20%
+    const tolerancia = 0.2;
+
+    // Verificación de los parámetros
+    let enRiesgo = false;
+    let enPeligro = false;
+    let mensaje = '';
+
+    function verificarParametro(parametro, referencia, nombre) {
+        const limiteInferior = referencia * (1 - tolerancia);
+        const limiteSuperior = referencia * (1 + tolerancia);
+        const limiteRiesgoInferior = referencia * (1 - tolerancia / 2);
+        const limiteRiesgoSuperior = referencia * (1 + tolerancia / 2);
+
+        if (parametro < limiteInferior || parametro > limiteSuperior) {
+            enPeligro = true;
+            mensaje += `${nombre} fuera de rango (`;
+            if (parametro < limiteInferior) {
+                mensaje += 'bajo)';
+            } else {
+                mensaje += 'alto)';
+            }
+            mensaje += ' ';
+        } else if (parametro < limiteRiesgoInferior || parametro > limiteRiesgoSuperior) {
+            enRiesgo = true;
+            mensaje += `${nombre} en riesgo (`;
+            if (parametro < limiteRiesgoInferior) {
+                mensaje += 'bajo)';
+            } else {
+                mensaje += 'alto)';
+            }
+            mensaje += ' ';
+        }
+    }
+
+    verificarParametro(humedad, refHumedad, 'Humedad');
+    verificarParametro(lluvia, refLluvia, 'Lluvia');
+    verificarParametro(temp, refTemp, 'Temperatura');
+    verificarParametro(humedadAmbiental, refHumedadAmbiental, 'Humedad Ambiental');
+    verificarParametro(presion, refPresion, 'Presión');
+
+    if (enPeligro) {
+        estadoGeneral.textContent = 'En Peligro: ' + mensaje.trim();
+        estadoGeneral.style.color = 'red';
+    } else if (enRiesgo) {
+        estadoGeneral.textContent = 'En Riesgo: ' + mensaje.trim();
+        estadoGeneral.style.color = 'orange';
+    } else {
+        estadoGeneral.textContent = 'Buen Estado';
+        estadoGeneral.style.color = 'green';
+    }
+}
+
+        function fetchApiData(callback) {
+            fetch('https://api.openweathermap.org/data/2.5/weather?lat=-12.139926086534963&lon=-76.97789045533932&appid=ae487c5e671ad04a5e97347b5f1cd8b3')
+                .then(response => response.json())
+                .then(data => {
+                    const temp = data.main.temp - 273.15; // Convertir de Kelvin a Celsius
+                    const humedad_ambiental = data.main.humidity;
+                    const presion = data.main.pressure;
+                    const climaData = {
+                        temp: temp,
+                        humedad_ambiental: humedad_ambiental,
+                        presion: presion
+                    };
+
+                    // Llamar al callback con los datos obtenidos
+                    callback(climaData);
+
+                    const feels_like = data.main.feels_like - 273.15;
+                    const temp_min = data.main.temp_min - 273.15;
+                    const temp_max = data.main.temp_max - 273.15;
+                    const climaDataHtml = `
+                        Temperatura: ${temp.toFixed(2)} °C<br>
+                        Sensación Térmica: ${feels_like.toFixed(2)} °C<br>
+                        Temp. Mínima: ${temp_min.toFixed(2)} °C<br>
+                        Temp. Máxima: ${temp_max.toFixed(2)} °C<br>
+                        Humedad Ambiental: ${humedad_ambiental}%<br>
+                        Presión Atmosférica: ${presion} hPa
+                    `;
+                    document.getElementById('climaData').innerHTML = climaDataHtml;
+                })
+                .catch(error => {
+                    console.error('Error fetching API data:', error);
+                });
+        }
+
+        fetchSensorData();
+        setInterval(fetchSensorData, 10000); // Actualizar datos del sensor cada 10 segundos
+        fetchApiData((climaData) => {
+            updateEstadoGeneral(0, 0, climaData.temp, climaData.humedad_ambiental, climaData.presion); // Llamada inicial
+        });
+        setInterval(() => fetchApiData((climaData) => {
+            updateEstadoGeneral(0, 0, climaData.temp, climaData.humedad_ambiental, climaData.presion);
+        }), 1200000); // Actualizar datos del clima cada 10 minutos
+    </script>
+</body>
+</html>
